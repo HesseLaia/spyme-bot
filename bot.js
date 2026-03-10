@@ -19,6 +19,18 @@ const {
 } = require("./messages");
 
 const bot = new Bot(BOT_TOKEN);
+
+// 启动前先删除旧的webhook/polling连接
+async function clearAndStart() {
+  try {
+    await bot.api.deleteWebhook({ drop_pending_updates: true });
+    console.log("✅ Cleared old connections");
+  } catch (e) {
+    console.log("No old connections to clear");
+  }
+}
+clearAndStart();
+
 bot.catch((err) => {
   console.error(`Update error:`, err.error.message);
 });
@@ -405,9 +417,11 @@ bot.command(["ping", "status"], async (ctx) => {
 // START
 // ═══════════════════════════════════════
 console.log("🕵️ SpyMe Bot starting...");
-bot.start({
-  onStart: (info) => console.log(`✅ Live: @${info.username}\nSend /spyme in a group to play!`),
-}).catch((err) => {
-  console.error("Bot crashed:", err.message);
-  setTimeout(() => process.exit(1), 3000); // 等3秒再退出，给旧连接时间断开
-});
+setTimeout(() => {
+  bot.start({
+    onStart: (info) => console.log(`✅ Live: @${info.username}\nSend /spyme in a group to play!`),
+  }).catch((err) => {
+    console.error("Bot crashed:", err.message);
+    setTimeout(() => process.exit(1), 5000);
+  });
+}, 5000); // 等5秒确保旧连接断开
