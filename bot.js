@@ -404,4 +404,7 @@ bot.command(["ping", "status"], async (ctx) => {
 console.log("🕵️ SpyMe Bot starting...");
 bot.start({
   onStart: (info) => console.log(`✅ Live: @${info.username}\nSend /spyme in a group to play!`),
+}).catch((err) => {
+  console.error("Bot crashed:", err.message);
+  setTimeout(() => process.exit(1), 3000); // 等3秒再退出，给旧连接时间断开
 });
