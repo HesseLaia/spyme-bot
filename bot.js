@@ -19,6 +19,9 @@ const {
 } = require("./messages");
 
 const bot = new Bot(BOT_TOKEN);
+bot.catch((err) => {
+  console.error(`Update error:`, err.error.message);
+});
 const games = new Map();
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
