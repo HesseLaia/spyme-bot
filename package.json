@@ -12,7 +12,8 @@
   "dependencies": {
     "ejs": "^3.1.9",
     "express": "^4.21.2",
-    "grammy": "^1.41.1"
+    "grammy": "^1.41.1",
+    "mysql2": "^3.19.1"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"

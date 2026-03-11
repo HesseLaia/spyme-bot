@@ -1,4 +1,59 @@
 const { Bot, InlineKeyboard } = require("grammy");
+// ═══════════════════════════════════════
+// DATABASE LAYER — 粘贴到 bot.js 顶部
+// const { Bot, InlineKeyboard } = require("grammy"); 下面
+// ═══════════════════════════════════════
+
+const mysql = require("mysql2/promise");
+
+let db;
+
+async function initDB() {
+  db = await mysql.createPool({
+    host: process.env.DB_HOST || "mysql.railway.internal",
+    port: process.env.DB_PORT || 3306,
+    database: process.env.DB_NAME || "railway",
+    user: process.env.DB_USER || "root",
+    password: process.env.DB_PASSWORD,
+    waitForConnections: true,
+    connectionLimit: 10,
+  });
+
+  // 建表（如果不存在）
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS games (
+      chat_id BIGINT PRIMARY KEY,
+      data JSON NOT NULL,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    )
+  `);
+
+  console.log("✅ Database connected");
+}
+
+// 替换原来的 games Map
+const gameRepo = {
+  async get(chatId) {
+    const [rows] = await db.execute(
+      "SELECT data FROM games WHERE chat_id = ?",
+      [chatId]
+    );
+    if (rows.length === 0) return null;
+    return JSON.parse(rows[0].data);
+  },
+
+  async set(chatId, game) {
+    await db.execute(
+      `INSERT INTO games (chat_id, data) VALUES (?, ?)
+       ON DUPLICATE KEY UPDATE data = VALUES(data)`,
+      [chatId, JSON.stringify(game)]
+    );
+  },
+
+  async delete(chatId) {
+    await db.execute("DELETE FROM games WHERE chat_id = ?", [chatId]);
+  },
+};
 const { BOT_TOKEN, BOT_USERNAME, BLINK_URL } = require("./config");
 const {
   createGame,
@@ -17,6 +72,8 @@ const {
   buildHelpMessage,
   buildStatusMessage,
 } = require("./messages");
+
+
 
 const bot = new Bot(BOT_TOKEN);
 const games = new Map();
@@ -49,12 +106,12 @@ bot.catch((err) => {
 bot.command("spyme", async (ctx) => {
   if (ctx.chat.type === "private") return ctx.reply("Please use this command in a group! 👥");
   const chatId = ctx.chat.id;
-  const existing = games.get(chatId);
+  const existing = await gameRepo.get(chatId);
   if (existing && existing.status !== "ended") {
     return ctx.reply("⚠️ There's already a game running! Send /end to finish it first.");
   }
   const game = createGame(chatId, ctx.chat.title || "", ctx.from.id, ctx.from.first_name);
-  games.set(chatId, game);
+  await gameRepo.set(chatId, game);
   const kb = new InlineKeyboard()
     .text("✋ Join Game", "join")
     .row()
@@ -68,7 +125,7 @@ bot.command("spyme", async (ctx) => {
 // ═══════════════════════════════════════
 bot.command("join", async (ctx) => {
   if (ctx.chat.type === "private") return;
-  const game = games.get(ctx.chat.id);
+  const game = await gameRepo.get(ctx.chat.id);
   if (!game || game.status !== "waiting") return ctx.reply("❌ No game to join. Send /spyme to create one!");
   if (game.players.find(p => p.userId === ctx.from.id)) return ctx.reply("You're already in the game!");
   game.players.push({ userId: ctx.from.id, name: ctx.from.first_name, role: null, word: null, isAlive: true });
@@ -77,7 +134,7 @@ bot.command("join", async (ctx) => {
 
 bot.callbackQuery("join", async (ctx) => {
   await ctx.answerCallbackQuery();
-  const game = games.get(ctx.chat.id);
+  const game = await gameRepo.get(ctx.chat.id);
   if (!game || game.status !== "waiting") return;
   if (game.players.find(p => p.userId === ctx.from.id)) {
     return ctx.answerCallbackQuery({ text: "You're already in!", show_alert: true });
@@ -151,7 +208,7 @@ async function doStart(ctx, game) {
         `❌ After removing players who can't receive DMs, only ${game.players.length} players remain.\nThe game is cancelled. Please make sure everyone has DM'd @${BOT_USERNAME} with /start, then use /spyme to start a new game.`,
         { parse_mode: "HTML" }
       );
-      games.delete(game.chatId);
+      await gameRepo.delete(game.chatId);
       return;
     }
   }
@@ -168,7 +225,7 @@ bot.command("start", async (ctx) => {
     );
     return;
   }
-  const game = games.get(ctx.chat.id);
+  const game = await gameRepo.get(ctx.chat.id);
   if (!game) return ctx.reply("❌ No game found. Send /spyme to create one!");
   if (ctx.from.id !== game.hostId) return ctx.reply("❌ Only the host can start the game!");
   if (game.status !== "waiting") return ctx.reply("❌ Game already started!");
@@ -177,7 +234,7 @@ bot.command("start", async (ctx) => {
 
 bot.callbackQuery("start", async (ctx) => {
   await ctx.answerCallbackQuery();
-  const game = games.get(ctx.chat.id);
+  const game = await gameRepo.get(ctx.chat.id);
   if (!game || game.status !== "waiting") return;
   if (ctx.from.id !== game.hostId) {
     return ctx.answerCallbackQuery({ text: "Only the host can start!", show_alert: true });
@@ -216,7 +273,7 @@ async function promptNextDescribe(game) {
 }
 
 bot.callbackQuery(/^desc_done_(\d+)$/, async (ctx) => {
-  const game = games.get(ctx.chat.id);
+  const game = await gameRepo.get(ctx.chat.id);
   if (!game || game.status !== "describing") {
     return ctx.answerCallbackQuery({ text: "This round has ended.", show_alert: true });
   }
@@ -269,7 +326,7 @@ bot.callbackQuery(/^vote_(\d+)$/, async (ctx) => {
   await ctx.answerCallbackQuery();
   const targetId = Number(ctx.match[1]);
   const voterId = ctx.from.id;
-  const game = games.get(ctx.chat.id);
+  const game = await gameRepo.get(ctx.chat.id);
   if (!game || game.status !== "voting") {
     return ctx.answerCallbackQuery({ text: "This round has ended.", show_alert: true });
   }
@@ -301,7 +358,7 @@ bot.callbackQuery(/^vote_(\d+)$/, async (ctx) => {
 // RESOLVE VOTES
 // ═══════════════════════════════════════
 async function resolveVotes(chatId, round) {
-  const game = games.get(chatId);
+  const game = await gameRepo.get(chatId);
   if (!game || game.status !== "voting") return;
 
   if (game.voteResolved) return;
@@ -367,7 +424,7 @@ async function endGame(chatId, game, winner) {
     .text("🔄 Play again", "new_game");
 
   await bot.api.sendMessage(chatId, msg, { parse_mode: "HTML", reply_markup: kb });
-  games.delete(chatId);
+  await gameRepo.delete(chatId);
 }
 
 // ═══════════════════════════════════════
@@ -375,10 +432,10 @@ async function endGame(chatId, game, winner) {
 // ═══════════════════════════════════════
 bot.command("end", async (ctx) => {
   if (ctx.chat.type === "private") return;
-  const game = games.get(ctx.chat.id);
+  const game = await gameRepo.get(ctx.chat.id);
   if (!game) return ctx.reply("No active game.");
   if (ctx.from.id !== game.hostId) return ctx.reply("❌ Only the host can end the game!");
-  games.delete(ctx.chat.id);
+  await gameRepo.delete(ctx.chat.id);
   await ctx.reply("🛑 Game ended. Send /spyme to start a new one!");
 });
 
@@ -402,6 +459,14 @@ bot.command(["ping", "status"], async (ctx) => {
 // START
 // ═══════════════════════════════════════
 console.log("🕵️ SpyMe Bot starting...");
-bot.start({
-  onStart: (info) => console.log(`✅ Live: @${info.username}\nSend /spyme in a group to play!`),
+initDB().then(() => {
+  bot.start({
+    onStart: (info) => console.log(`✅ Live: @${info.username}\nSend /spyme in a group to play!`),
+  }).catch((err) => {
+    console.error("Bot crashed:", err.message);
+    setTimeout(() => process.exit(1), 5000);
+  });
+}).catch((err) => {
+  console.error("❌ DB connection failed:", err.message);
+  process.exit(1);
 });
