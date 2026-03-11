@@ -83,6 +83,14 @@ const {
 
 const bot = new Bot(BOT_TOKEN);
 
+// 将当前游戏状态持久化到数据库。
+// 注意去掉不能序列化的字段（例如 voteTimeout）。
+async function saveGame(game) {
+  const plain = { ...game };
+  delete plain.voteTimeout;
+  await gameRepo.set(game.chatId, JSON.stringify(plain));
+}
+
 // 启动前先删除旧的 webhook/polling 连接
 async function clearAndStart() {
   try {
@@ -123,14 +131,14 @@ bot.command("spyme", async (ctx) => {
     return ctx.reply("⚠️ There's already a game running! Send /end to finish it first.");
   }
   const game = createGame(chatId, ctx.chat.title || "", ctx.from.id, ctx.from.first_name);
-  // 先在这里序列化，避免被 MySQL 客户端隐式转为 "[object Object]"
-  await gameRepo.set(chatId, JSON.stringify(game));
+  await saveGame(game);
   const kb = new InlineKeyboard()
     .text("✋ Join Game", "join")
     .row()
     .text("🚀 Start Game (host)", "start");
   const sent = await ctx.reply(buildLobbyMessage(game), { parse_mode: "HTML", reply_markup: kb });
   game.lobbyMsgId = sent.message_id;
+  await saveGame(game);
 });
 
 // ═══════════════════════════════════════
@@ -142,6 +150,7 @@ bot.command("join", async (ctx) => {
   if (!game || game.status !== "waiting") return ctx.reply("❌ No game to join. Send /spyme to create one!");
   if (game.players.find(p => p.userId === ctx.from.id)) return ctx.reply("You're already in the game!");
   game.players.push({ userId: ctx.from.id, name: ctx.from.first_name, role: null, word: null, isAlive: true });
+  await saveGame(game);
   await updateLobby(ctx, game);
 });
 
@@ -153,6 +162,7 @@ bot.callbackQuery("join", async (ctx) => {
     return ctx.answerCallbackQuery({ text: "You're already in!", show_alert: true });
   }
   game.players.push({ userId: ctx.from.id, name: ctx.from.first_name, role: null, word: null, isAlive: true });
+  await saveGame(game);
   await updateLobby(ctx, game);
 });
 
@@ -168,6 +178,7 @@ async function updateLobby(ctx, game) {
   } catch (e) {
     const sent = await ctx.reply(buildLobbyMessage(game), { parse_mode: "HTML", reply_markup: kb });
     game.lobbyMsgId = sent.message_id;
+    await saveGame(game);
   }
 }
 
@@ -181,6 +192,7 @@ async function doStart(ctx, game) {
   assignRoles(game);
   game.status = "describing";
   game.describeIndex = 0;
+  await saveGame(game);
 
   await ctx.reply(
     `🎮 <b>Game starting!</b> ${game.players.length} players\n📬 Sending secret words via DM...`,
@@ -208,6 +220,7 @@ async function doStart(ctx, game) {
     game.players = game.players.filter(
       (p) => !failedPlayers.some((f) => f.userId === p.userId)
     );
+    await saveGame(game);
 
     const names = failedPlayers.map((p) => p.name).join(", ");
     await ctx.reply(
@@ -217,6 +230,7 @@ async function doStart(ctx, game) {
 
     if (game.players.length < 4) {
       game.status = "ended";
+      await saveGame(game);
       await ctx.reply(
         `❌ After removing players who can't receive DMs, only ${game.players.length} players remain.\nThe game is cancelled. Please make sure everyone has DM'd @${BOT_USERNAME} with /start, then use /spyme to start a new game.`,
         { parse_mode: "HTML" }
@@ -283,6 +297,7 @@ async function promptNextDescribe(game) {
     { parse_mode: "HTML", reply_markup: kb }
   );
   game.describeMsgId = sent.message_id;
+   await saveGame(game);
 }
 
 bot.callbackQuery(/^desc_done_(\d+)$/, async (ctx) => {
@@ -308,6 +323,7 @@ bot.callbackQuery(/^desc_done_(\d+)$/, async (ctx) => {
   } catch (e) {}
 
   game.describeIndex++;
+  await saveGame(game);
   await sleep(500);
   await promptNextDescribe(game);
 });
@@ -319,6 +335,7 @@ async function startVotePhase(game) {
   game.status = "voting";
   game.voteResolved = false;
   if (!game.votes[game.round]) game.votes[game.round] = {};
+  await saveGame(game);
   const alive = getAlive(game);
 
   const kb = new InlineKeyboard();
@@ -363,6 +380,7 @@ bot.callbackQuery(/^vote_(\d+)$/, async (ctx) => {
 
   const alive = getAlive(game);
   if (Object.keys(roundVotes).length >= alive.length) {
+    await saveGame(game);
     await resolveVotes(game.chatId, game.round);
   }
 });
@@ -380,6 +398,7 @@ async function resolveVotes(chatId, round) {
     clearTimeout(game.voteTimeout);
     game.voteTimeout = null;
   }
+  await saveGame(game);
 
   const roundVotes = game.votes[round] || {};
   const tally = {};
@@ -397,6 +416,7 @@ async function resolveVotes(chatId, round) {
     game.round++;
     game.status = "describing";
     game.describeIndex = 0;
+    await saveGame(game);
     await promptNextDescribe(game);
     return;
   }
@@ -404,6 +424,7 @@ async function resolveVotes(chatId, round) {
   const elimId = Number(top[0]);
   const elim = game.players.find(p => p.userId === elimId);
   elim.isAlive = false;
+  await saveGame(game);
 
   await bot.api.sendMessage(chatId,
     `⚡ <b>${elim.name} has been eliminated!</b>\n\n` +
@@ -415,11 +436,13 @@ async function resolveVotes(chatId, round) {
   const winner = checkWin(game);
   if (winner) {
     game.status = "ended";
+    await saveGame(game);
     await endGame(chatId, game, winner);
   } else {
     game.round++;
     game.status = "describing";
     game.describeIndex = 0;
+    await saveGame(game);
     await sleep(1500);
     await promptNextDescribe(game);
   }
