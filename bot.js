@@ -32,6 +32,8 @@ async function initDB() {
 }
 
 // 替换原来的 games Map
+// 注意：所有写入数据库的 game 对象都应先在调用处 JSON.stringify，
+// 以避免被隐式转成 "[object Object]"。
 const gameRepo = {
   async get(chatId) {
     const [rows] = await db.execute(
@@ -42,11 +44,15 @@ const gameRepo = {
     return JSON.parse(rows[0].data);
   },
 
-  async set(chatId, game) {
+  /**
+   * @param {number} chatId
+   * @param {string} gameJson 已通过 JSON.stringify 序列化的 game 字符串
+   */
+  async set(chatId, gameJson) {
     await db.execute(
       `INSERT INTO games (chat_id, data) VALUES (?, ?)
        ON DUPLICATE KEY UPDATE data = VALUES(data)`,
-      [chatId, JSON.stringify(game)]
+      [chatId, gameJson]
     );
   },
 
@@ -117,7 +123,8 @@ bot.command("spyme", async (ctx) => {
     return ctx.reply("⚠️ There's already a game running! Send /end to finish it first.");
   }
   const game = createGame(chatId, ctx.chat.title || "", ctx.from.id, ctx.from.first_name);
-  await gameRepo.set(chatId, game);
+  // 先在这里序列化，避免被 MySQL 客户端隐式转为 "[object Object]"
+  await gameRepo.set(chatId, JSON.stringify(game));
   const kb = new InlineKeyboard()
     .text("✋ Join Game", "join")
     .row()
