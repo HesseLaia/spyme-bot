@@ -76,7 +76,20 @@ const {
 
 
 const bot = new Bot(BOT_TOKEN);
-const games = new Map();
+
+// 启动前先删除旧的 webhook/polling 连接
+async function clearAndStart() {
+  try {
+    await bot.api.deleteWebhook({ drop_pending_updates: true });
+    console.log("✅ Cleared old connections");
+  } catch (e) {
+    console.log("No old connections to clear");
+  }
+}
+
+bot.catch((err) => {
+  console.error(`Error for update ${err.ctx.update.update_id}:`, err.error.message);
+});
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
@@ -91,13 +104,6 @@ bot.on("my_chat_member", async (ctx) => {
       { parse_mode: "HTML" }
     );
   }
-});
-
-// ═══════════════════════════════════════
-// ERROR HANDLER
-// ═══════════════════════════════════════
-bot.catch((err) => {
-  console.error(`Error for update ${err.ctx.update.update_id}:`, err.error.message);
 });
 
 // ═══════════════════════════════════════
@@ -459,14 +465,17 @@ bot.command(["ping", "status"], async (ctx) => {
 // START
 // ═══════════════════════════════════════
 console.log("🕵️ SpyMe Bot starting...");
-initDB().then(() => {
-  bot.start({
-    onStart: (info) => console.log(`✅ Live: @${info.username}\nSend /spyme in a group to play!`),
-  }).catch((err) => {
-    console.error("Bot crashed:", err.message);
-    setTimeout(() => process.exit(1), 5000);
+initDB()
+  .then(() => clearAndStart())
+  .then(() => {
+    bot.start({
+      onStart: (info) => console.log(`✅ Live: @${info.username}\nSend /spyme in a group to play!`),
+    }).catch((err) => {
+      console.error("Bot crashed:", err.message);
+      setTimeout(() => process.exit(1), 5000);
+    });
+  })
+  .catch((err) => {
+    console.error("❌ DB connection failed:", err.message);
+    process.exit(1);
   });
-}).catch((err) => {
-  console.error("❌ DB connection failed:", err.message);
-  process.exit(1);
-});
