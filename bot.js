@@ -340,7 +340,7 @@ bot.callbackQuery(/^desc_done_(\d+)$/, async (ctx) => {
 async function startVotePhase(game) {
   game.status = "voting";
   game.voteResolved = false;
-  if (!game.votes[game.round]) game.votes[game.round] = {};
+  if (!game.votes[String(game.round)]) game.votes[String(game.round)] = {};
   await saveGame(game);
   const alive = getAlive(game);
 
@@ -369,7 +369,7 @@ bot.callbackQuery(/^vote_(\d+)$/, async (ctx) => {
     return ctx.answerCallbackQuery({ text: "This round has ended.", show_alert: true });
   }
 
-  const roundVotes = game.votes[game.round] || {};
+  const roundVotes = game.votes[game.round] || game.votes[String(game.round)] || {};
   if (roundVotes[voterId] !== undefined) {
     return ctx.answerCallbackQuery({ text: "You already voted!", show_alert: true });
   }
@@ -381,7 +381,7 @@ bot.callbackQuery(/^vote_(\d+)$/, async (ctx) => {
   }
 
   roundVotes[voterId] = targetId;
-  game.votes[game.round] = roundVotes;
+  game.votes[String(game.round)] = roundVotes;
 
   const targetName = game.players.find(p => p.userId === targetId)?.name || "someone";
   await ctx.reply(`✅ <b>${ctx.from.first_name}</b> voted for <b>${targetName}</b>`, { parse_mode: "HTML" });
@@ -408,7 +408,7 @@ async function resolveVotes(chatId, round) {
   }
   await saveGame(game);
 
-  const roundVotes = game.votes[round] || {};
+  const roundVotes = game.votes[round] || game.votes[String(round)] || {};
   const tally = {};
   getAlive(game).forEach(p => { tally[p.userId] = 0; });
   Object.values(roundVotes).forEach(tid => { tally[tid] = (tally[tid] || 0) + 1; });
