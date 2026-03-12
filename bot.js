@@ -370,7 +370,7 @@ bot.callbackQuery(/^vote_(\d+)$/, async (ctx) => {
   }
 
   const roundVotes = game.votes[game.round] || game.votes[String(game.round)] || {};
-  if (roundVotes[voterId] !== undefined) {
+  if (roundVotes[String(voterId)] !== undefined) {
     return ctx.answerCallbackQuery({ text: "You already voted!", show_alert: true });
   }
   if (!game.players.find(p => p.userId === voterId && p.isAlive)) {
@@ -380,7 +380,7 @@ bot.callbackQuery(/^vote_(\d+)$/, async (ctx) => {
     return ctx.answerCallbackQuery({ text: "That player is already out!", show_alert: true });
   }
 
-  roundVotes[voterId] = targetId;
+  roundVotes[String(voterId)] = targetId;
   game.votes[String(game.round)] = roundVotes;
 
   const targetName = game.players.find(p => p.userId === targetId)?.name || "someone";
@@ -410,8 +410,11 @@ async function resolveVotes(chatId, round) {
 
   const roundVotes = game.votes[round] || game.votes[String(round)] || {};
   const tally = {};
-  getAlive(game).forEach(p => { tally[p.userId] = 0; });
-  Object.values(roundVotes).forEach(tid => { tally[tid] = (tally[tid] || 0) + 1; });
+  getAlive(game).forEach(p => { tally[String(p.userId)] = 0; });
+  Object.values(roundVotes).forEach(tid => { 
+    const key = String(tid);
+    tally[key] = (tally[key] || 0) + 1; 
+  });
 
   const max = Math.max(...Object.values(tally));
   const top = Object.keys(tally).filter(id => tally[id] === max);
