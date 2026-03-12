@@ -494,7 +494,19 @@ bot.command("end", async (ctx) => {
 });
 
 bot.callbackQuery("new_game", async (ctx) => {
-  await ctx.answerCallbackQuery({ text: "Send /spyme to start a new game!" });
+  await ctx.answerCallbackQuery();
+  const chatId = ctx.callbackQuery.message?.chat?.id ?? ctx.chat?.id;
+  if (!chatId) return;
+  const existing = await gameRepo.get(chatId);
+  if (existing) return ctx.answerCallbackQuery({ text: "A game is already running!", show_alert: true });
+  const game = createGame(chatId, ctx.callbackQuery.message?.chat?.title || "", ctx.from.id, ctx.from.first_name);
+  await saveGame(game);
+  const sent = await bot.api.sendMessage(chatId, buildLobbyMessage(game), {
+    parse_mode: "HTML",
+    reply_markup: new InlineKeyboard().text("✋ Join Game", "join"),
+  });
+  game.lobbyMsgId = sent.message_id;
+  await saveGame(game);
 });
 
 bot.command("help", async (ctx) => {
