@@ -387,9 +387,10 @@ bot.callbackQuery(/^vote_(\d+)$/, async (ctx) => {
   await ctx.reply(`✅ <b>${ctx.from.first_name}</b> voted for <b>${targetName}</b>`, { parse_mode: "HTML" });
 
   const alive = getAlive(game);
+  console.log(`vote: roundVotes keys=${Object.keys(roundVotes).length} alive=${alive.length} chatId=${chatId} gameChatId=${game.chatId}`);
   if (Object.keys(roundVotes).length >= alive.length) {
     await saveGame(game);
-    await resolveVotes(game.chatId, game.round);
+    await resolveVotes(chatId, game.round);
   }
 });
 
