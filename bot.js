@@ -398,9 +398,13 @@ bot.callbackQuery(/^vote_(\d+)$/, async (ctx) => {
 // ═══════════════════════════════════════
 async function resolveVotes(chatId, round) {
   const game = await gameRepo.get(chatId);
+  console.log(`resolveVotes called: chatId=${chatId} round=${round} status=${game?.status} voteResolved=${game?.voteResolved}`);
   if (!game || game.status !== "voting") return;
 
-  if (game.voteResolved) return;
+  if (game.voteResolved) {
+    console.log(`resolveVotes: already resolved, returning`);
+    return;
+  }
   game.voteResolved = true;
   if (game.voteTimeout) {
     clearTimeout(game.voteTimeout);
@@ -409,12 +413,14 @@ async function resolveVotes(chatId, round) {
   await saveGame(game);
 
   const roundVotes = game.votes[round] || game.votes[String(round)] || {};
+  console.log(`resolveVotes: roundVotes=`, JSON.stringify(roundVotes));
   const tally = {};
   getAlive(game).forEach(p => { tally[String(p.userId)] = 0; });
   Object.values(roundVotes).forEach(tid => { 
     const key = String(tid);
     tally[key] = (tally[key] || 0) + 1; 
   });
+  console.log(`resolveVotes: tally=`, JSON.stringify(tally));
 
   const max = Math.max(...Object.values(tally));
   const top = Object.keys(tally).filter(id => tally[id] === max);
