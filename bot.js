@@ -388,8 +388,8 @@ bot.callbackQuery(/^vote_(\d+)$/, async (ctx) => {
 
   const alive = getAlive(game);
   console.log(`vote: roundVotes keys=${Object.keys(roundVotes).length} alive=${alive.length} chatId=${chatId} gameChatId=${game.chatId}`);
+  await saveGame(game);
   if (Object.keys(roundVotes).length >= alive.length) {
-    await saveGame(game);
     await resolveVotes(chatId, game.round);
   }
 });
