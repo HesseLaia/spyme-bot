@@ -156,7 +156,9 @@ bot.command("join", async (ctx) => {
 
 bot.callbackQuery("join", async (ctx) => {
   await ctx.answerCallbackQuery();
-  const game = await gameRepo.get(ctx.chat.id);
+  const chatId = ctx.callbackQuery.message?.chat?.id ?? ctx.chat?.id;
+  if (!chatId) return;
+  const game = await gameRepo.get(chatId);
   if (!game || game.status !== "waiting") return;
   if (game.players.find(p => p.userId === ctx.from.id)) {
     return ctx.answerCallbackQuery({ text: "You're already in!", show_alert: true });
@@ -261,7 +263,9 @@ bot.command("start", async (ctx) => {
 
 bot.callbackQuery("start", async (ctx) => {
   await ctx.answerCallbackQuery();
-  const game = await gameRepo.get(ctx.chat.id);
+  const chatId = ctx.callbackQuery.message?.chat?.id ?? ctx.chat?.id;
+  if (!chatId) return;
+  const game = await gameRepo.get(chatId);
   if (!game || game.status !== "waiting") return;
   if (ctx.from.id !== game.hostId) {
     return ctx.answerCallbackQuery({ text: "Only the host can start!", show_alert: true });
@@ -301,7 +305,9 @@ async function promptNextDescribe(game) {
 }
 
 bot.callbackQuery(/^desc_done_(\d+)$/, async (ctx) => {
-  const game = await gameRepo.get(ctx.chat.id);
+  const chatId = ctx.callbackQuery.message?.chat?.id ?? ctx.chat?.id;
+  if (!chatId) return ctx.answerCallbackQuery();
+  const game = await gameRepo.get(chatId);
   if (!game || game.status !== "describing") {
     return ctx.answerCallbackQuery({ text: "This round has ended.", show_alert: true });
   }
@@ -356,7 +362,9 @@ bot.callbackQuery(/^vote_(\d+)$/, async (ctx) => {
   await ctx.answerCallbackQuery();
   const targetId = Number(ctx.match[1]);
   const voterId = ctx.from.id;
-  const game = await gameRepo.get(ctx.chat.id);
+  const chatId = ctx.callbackQuery.message?.chat?.id ?? ctx.chat?.id;
+  if (!chatId) return;
+  const game = await gameRepo.get(chatId);
   if (!game || game.status !== "voting") {
     return ctx.answerCallbackQuery({ text: "This round has ended.", show_alert: true });
   }
